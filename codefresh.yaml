@@ -1,0 +1,57 @@
+version: "1.0"
+stages:
+  - "clone"
+  - "build"
+  - "integration"
+  - "push"
+steps:
+  clone:
+    type: "git-clone"
+    description: "Cloning main repository..."
+    repo: "katapultmedia/codefresh-testing"
+    revision: "${{CF_BRANCH}}"
+    stage: "clone"
+  docker_build:
+    title: Building My Docker image
+    type: build
+    working_directory: '${{CF_REPO_NAME}}'
+    image_name: '${{CF_REPO_OWNER}}/${{CF_REPO_NAME}}'
+    tag: '${{CF_SHORT_REVISION}}'
+    stage: "build"
+  approval_for_push:
+    type: "pending-approval"
+    title: "Should we run push"
+    when:
+      branch:
+        only:
+          - "master"
+    stage: "push"
+  parallel_push:
+    type: "parallel"
+    steps:
+      annotate_build:
+        title: "Annotating Build"
+        image: "${{docker_build}}"
+        working_directory: "IMAGE_WORK_DIR"
+        commands:
+          - "echo Annotating Build..."
+        on_success:
+          metadata:
+            set:
+              - ${{docker_build.imageId}}:
+                  - CF_QUALITY: true
+        on_error:
+          metadata:
+            set:
+              - ${{build.imageId}}:
+                  - CF_QUALITY: false
+      push:
+        title: "Pushing image to cfcr"
+        type: "push"
+        image_name: "katapultmedia/codefresh-testing"
+        registry: "cfcr"
+        candidate: "${{docker_build}}"
+        tags:
+          - "${{CF_BRANCH_TAG_NORMALIZED}}"
+          - "${{CF_REVISION}}"
+    stage: "push"
